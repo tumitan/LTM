@@ -23,7 +23,7 @@ No WhatsApp: abra a conversa → ⋮ → Mais → Exportar conversa → **Inclui
 - **Local** (padrão): [faster-whisper](https://github.com/SYSTRAN/faster-whisper), gratuito e offline.
   O modelo é baixado na primeira execução (`small` ≈ 460 MB; `medium`/`large-v3-turbo` são mais precisos
   e mais lentos). Usa GPU automaticamente se disponível (`WHISPER_DEVICE=cpu|cuda|auto`).
-- **OpenAI** (opcional): defina `OPENAI_API_KEY` para habilitar (`whisper-1`, `gpt-4o-mini-transcribe`,
+- **OpenAI** (opcional): crie um arquivo `.env` (veja `.env.example`) com `OPENAI_API_KEY=sk-...` ou exporte a variável antes de iniciar o servidor. Quando a chave existe, o app já abre com OpenAI selecionado e transcreve 4 áudios em paralelo (`OPENAI_CONCURRENCY`). Modelos (`whisper-1`, `gpt-4o-mini-transcribe`,
   `gpt-4o-transcribe`). Os áudios são enviados à API.
 
 Variáveis opcionais: `WHISPER_MODEL`, `WHISPER_COMPUTE_TYPE` (`int8`), `WHISPER_BEAM_SIZE` (`5`),

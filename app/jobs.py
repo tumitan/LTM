@@ -9,6 +9,7 @@ import threading
 import time
 import uuid
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict
 from pathlib import Path
 from typing import Callable
@@ -134,28 +135,41 @@ def _run(job: Job, transcriber_factory: Callable) -> None:
         job.save()
         job.status = "transcribing"
         transcriber = transcriber_factory(job.engine, job.model)
-        last_save = time.time()
-        with zipfile.ZipFile(job.zip_path) as zf:
-            for m in audios:
-                if job.cancel.is_set():
-                    job.status = "cancelled"
-                    break
-                m["tr_status"] = "running"
-                suffix = Path(m["audio_name"]).suffix or ".opus"
-                with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                    tmp.write(zf.read(m["audio_path"]))
-                try:
-                    text = transcriber.transcribe(tmp.name, job.language)
-                    m["transcript"] = text
-                    m["tr_status"] = "done"
-                except Exception as e:  # noqa: BLE001 - um audio ruim nao pode derrubar o job
-                    m["tr_status"] = "error"
-                    m["tr_error"] = f"{type(e).__name__}: {e}"
-                finally:
-                    os.unlink(tmp.name)
-                if time.time() - last_save > 5:
+        workers = int(os.getenv("OPENAI_CONCURRENCY", "4")) if job.engine == "openai" else 1
+        save_lock = threading.Lock()
+        last_save = [time.time()]
+        zip_lock = threading.Lock()
+        zf = zipfile.ZipFile(job.zip_path)
+
+        def work(m: dict) -> None:
+            if job.cancel.is_set():
+                return
+            m["tr_status"] = "running"
+            suffix = Path(m["audio_name"]).suffix or ".opus"
+            with zip_lock:
+                data = zf.read(m["audio_path"])
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(data)
+            try:
+                m["transcript"] = transcriber.transcribe(tmp.name, job.language)
+                m["tr_status"] = "done"
+            except Exception as e:  # noqa: BLE001 - um audio ruim nao pode derrubar o job
+                m["tr_status"] = "error"
+                m["tr_error"] = f"{type(e).__name__}: {e}"
+            finally:
+                os.unlink(tmp.name)
+            with save_lock:
+                if time.time() - last_save[0] > 5:
                     job.save()
-                    last_save = time.time()
+                    last_save[0] = time.time()
+
+        try:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                list(pool.map(work, audios))
+        finally:
+            zf.close()
+        if job.cancel.is_set():
+            job.status = "cancelled"
         if job.status != "cancelled":
             job.status = "done"
     except Exception as e:  # noqa: BLE001

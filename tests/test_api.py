@@ -62,3 +62,26 @@ def test_full_flow(client):
 def test_rejects_non_zip(client):
     r = client.post("/api/jobs", files={"file": ("x.zip", b"nao e zip")})
     assert r.status_code == 400
+
+
+def test_openai_transcriber_converts_and_calls_api(tmp_path, monkeypatch):
+    import subprocess
+    from types import SimpleNamespace
+
+    from app import transcriber
+
+    wav = tmp_path / "a.wav"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=440:duration=1", str(wav)], check=True)
+    seen = {}
+
+    def create(**kw):
+        seen.update(kw, size=len(kw["file"].read()))
+        return SimpleNamespace(text=" ola mundo ")
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    t = transcriber.make_transcriber("openai", "whisper-1")
+    t.client = SimpleNamespace(audio=SimpleNamespace(
+        transcriptions=SimpleNamespace(create=create)))
+    assert t.transcribe(str(wav), "pt") == "ola mundo"
+    assert seen["model"] == "whisper-1" and seen["language"] == "pt" and seen["size"] > 0

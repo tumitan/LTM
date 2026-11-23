@@ -131,6 +131,7 @@ async function init() {
     const o = new Option(v.label + (v.available ? '' : ' — indisponível (defina OPENAI_API_KEY)'), k);
     o.disabled = !v.available; eng.add(o);
   }
+  if (config.engines.openai.available) eng.value = 'openai';
   eng.onchange = fillModels; fillModels();
   loadHistory();
   if (location.hash.startsWith('#job=')) openJob(location.hash.slice(5));

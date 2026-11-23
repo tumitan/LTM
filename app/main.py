@@ -13,8 +13,10 @@ from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from . import exporters, jobs
+from .env import load_dotenv
 from .transcriber import LOCAL_MODELS, OPENAI_MODELS, available_engines
 
+load_dotenv()
 STATIC = Path(__file__).parent / "static"
 MAX_UPLOAD = int(os.getenv("MAX_UPLOAD_MB", "2048")) * 1024 * 1024
 
