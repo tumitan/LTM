@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcritor de áudios do WhatsApp</title>
+<style>
+  :root { --bg:#0f1720; --panel:#17212c; --panel2:#1e2b39; --text:#e7eef5; --muted:#8fa3b5;
+          --accent:#25d366; --accent2:#128c7e; --err:#ff6b6b; --warn:#f7c948; --border:#2a3a4a; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+         background:var(--bg); color:var(--text); }
+  header { padding:16px 24px; border-bottom:1px solid var(--border); display:flex;
+           align-items:center; gap:12px; }
+  header h1 { font-size:18px; margin:0; }
+  header .logo { width:32px; height:32px; border-radius:8px; background:var(--accent);
+                 display:grid; place-items:center; color:#06210f; font-weight:700; }
+  main { max-width:1000px; margin:0 auto; padding:24px; }
+  .card { background:var(--panel); border:1px solid var(--border); border-radius:12px;
+          padding:20px; margin-bottom:20px; }
+  .drop { border:2px dashed var(--border); border-radius:12px; padding:36px; text-align:center;
+          cursor:pointer; transition:.15s; color:var(--muted); }
+  .drop.over, .drop:hover { border-color:var(--accent); color:var(--text);
+                            background:rgba(37,211,102,.06); }
+  .drop strong { color:var(--text); display:block; font-size:16px; margin-bottom:6px; }
+  .opts { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:12px;
+          margin-top:16px; }
+  label { font-size:12px; color:var(--muted); display:block; margin-bottom:4px; }
+  select, input[type=text], input[type=search] { width:100%; padding:9px 10px; border-radius:8px;
+          background:var(--panel2); color:var(--text); border:1px solid var(--border); font-size:14px; }
+  button { background:var(--accent); color:#06210f; border:0; padding:10px 16px; border-radius:8px;
+           font-weight:600; cursor:pointer; font-size:14px; }
+  button.secondary { background:var(--panel2); color:var(--text); border:1px solid var(--border); }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .grow { flex:1; min-width:180px; }
+  .progress { height:10px; background:var(--panel2); border-radius:6px; overflow:hidden; margin:10px 0; }
+  .progress > div { height:100%; background:var(--accent); width:0; transition:width .3s; }
+  .muted { color:var(--muted); font-size:13px; }
+  .error { color:var(--err); }
+  .chat { display:flex; flex-direction:column; gap:6px; background:#0b141a; padding:16px;
+          border-radius:12px; max-height:70vh; overflow:auto; }
+  .msg { max-width:80%; padding:8px 10px; border-radius:10px; background:#202c33; align-self:flex-start;
+         white-space:pre-wrap; word-wrap:break-word; font-size:14px; line-height:1.4; }
+  .msg.mine { background:#005c4b; align-self:flex-end; }
+  .msg.system { align-self:center; background:transparent; color:var(--muted); font-size:12px;
+                max-width:90%; text-align:center; }
+  .msg .who { font-size:12px; font-weight:600; color:#53bdeb; margin-bottom:2px; }
+  .msg .ts { font-size:11px; color:var(--muted); margin-top:4px; text-align:right; }
+  .msg audio { width:260px; max-width:100%; height:34px; margin:4px 0; display:block; }
+  .tr { margin-top:6px; padding:8px; border-left:3px solid var(--accent); background:rgba(0,0,0,.25);
+        border-radius:4px; }
+  .tr.pending { border-color:var(--muted); color:var(--muted); font-style:italic; }
+  .tr.err { border-color:var(--err); color:var(--err); }
+  .tr.empty { border-color:var(--warn); color:var(--warn); font-style:italic; }
+  mark { background:var(--warn); color:#000; border-radius:2px; }
+  .jobs a { color:var(--accent); cursor:pointer; text-decoration:underline; }
+  .hidden { display:none !important; }
+  .check { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<header><div class="logo">W</div><h1>Transcritor de áudios do WhatsApp</h1></header>
+<main>
+  <section class="card" id="uploadCard">
+    <div class="drop" id="drop">
+      <strong>Arraste o .zip da conversa aqui ou clique para escolher</strong>
+      No WhatsApp: abra a conversa → ⋮ → Mais → Exportar conversa → <em>Incluir mídia</em>.
+      <input type="file" id="file" accept=".zip,application/zip" class="hidden">
+    </div>
+    <div class="muted" id="fileName" style="margin-top:10px"></div>
+    <div class="opts">
+      <div><label>Motor</label><select id="engine"></select></div>
+      <div><label>Modelo</label><select id="model"></select></div>
+      <div><label>Idioma</label>
+        <select id="language">
+          <option value="pt">Português</option><option value="auto">Detectar automaticamente</option>
+          <option value="en">Inglês</option><option value="es">Espanhol</option>
+        </select></div>
+    </div>
+    <div class="muted" id="engineHint" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:16px">
+      <button id="start" disabled>Transcrever áudios</button>
+      <span class="error" id="uploadErr"></span>
+    </div>
+  </section>
+
+  <section class="card hidden" id="progressCard">
+    <div class="row"><strong id="jobTitle" class="grow"></strong>
+      <button class="secondary" id="cancelBtn">Cancelar</button>
+      <button class="secondary" id="newBtn">Nova conversa</button></div>
+    <div class="progress"><div id="bar"></div></div>
+    <div class="muted" id="progressTxt"></div>
+    <div class="error" id="jobErr"></div>
+  </section>
+
+  <section class="card hidden" id="viewCard">
+    <div class="row">
+      <input type="search" id="q" class="grow" placeholder="Buscar nas mensagens e transcrições…">
+      <select id="who" style="width:auto"><option value="">Todos</option></select>
+      <label class="check"><input type="checkbox" id="onlyAudio"> Só áudios</label>
+      <label class="check"><input type="checkbox" id="hideSystem" checked> Ocultar avisos</label>
+    </div>
+    <div class="row" style="margin:12px 0">
+      <span class="muted" id="count"></span><span class="grow"></span>
+      <button class="secondary" id="copyBtn">Copiar transcrições</button>
+      <select id="expFmt" style="width:auto">
+        <option value="txt">TXT</option><option value="md">Markdown</option>
+        <option value="csv">CSV</option><option value="json">JSON</option></select>
+      <label class="check"><input type="checkbox" id="expOnlyAudio"> só áudios</label>
+      <button id="expBtn">Exportar</button>
+    </div>
+    <div class="chat" id="chat"></div>
+  </section>
+
+  <section class="card jobs hidden" id="histCard">
+    <strong>Conversas anteriores</strong>
+    <div id="hist" style="margin-top:8px"></div>
+  </section>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+let config, currentJob = null, timer = null, messages = [], chosen = null;
+let lastSig = '';
+
+async function init() {
+  config = await (await fetch('/api/config')).json();
+  const eng = $('engine');
+  for (const [k, v] of Object.entries(config.engines)) {
+    const o = new Option(v.label + (v.available ? '' : ' — indisponível (defina OPENAI_API_KEY)'), k);
+    o.disabled = !v.available; eng.add(o);
+  }
+  if (config.engines.openai.available) eng.value = 'openai';
+  eng.onchange = fillModels; fillModels();
+  loadHistory();
+  if (location.hash.startsWith('#job=')) openJob(location.hash.slice(5));
+}
+function fillModels() {
+  const e = config.engines[$('engine').value], m = $('model');
+  m.innerHTML = '';
+  e.models.forEach(x => m.add(new Option(x, x)));
+  m.value = e.default_model;
+  $('engineHint').textContent = $('engine').value === 'local'
+    ? 'Na primeira vez o modelo é baixado (small ≈ 460 MB). Modelos maiores são mais precisos e mais lentos.'
+    : 'Os áudios serão enviados para a API da OpenAI.';
+}
+
+const drop = $('drop'), fileIn = $('file');
+drop.onclick = () => fileIn.click();
+drop.ondragover = e => { e.preventDefault(); drop.classList.add('over'); };
+drop.ondragleave = () => drop.classList.remove('over');
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); pick(e.dataTransfer.files[0]); };
+fileIn.onchange = () => pick(fileIn.files[0]);
+function pick(f) {
+  if (!f) return;
+  chosen = f;
+  $('fileName').textContent = `${f.name} (${(f.size/1048576).toFixed(1)} MB)`;
+  $('start').disabled = false;
+}
+
+$('start').onclick = () => {
+  if (!chosen) return;
+  $('uploadErr').textContent = ''; $('start').disabled = true;
+  const fd = new FormData();
+  fd.append('file', chosen); fd.append('engine', $('engine').value);
+  fd.append('model', $('model').value); fd.append('language', $('language').value);
+  const xhr = new XMLHttpRequest();
+  xhr.open('POST', '/api/jobs');
+  xhr.upload.onprogress = e => {
+    if (e.lengthComputable) $('start').textContent = `Enviando… ${Math.round(100*e.loaded/e.total)}%`;
+  };
+  xhr.onload = () => {
+    $('start').textContent = 'Transcrever áudios';
+    if (xhr.status === 200) openJob(JSON.parse(xhr.responseText).id);
+    else { $('uploadErr').textContent = (JSON.parse(xhr.responseText||'{}').detail) || 'Erro no envio';
+           $('start').disabled = false; }
+  };
+  xhr.onerror = () => { $('uploadErr').textContent = 'Falha de rede'; $('start').disabled = false;
+                        $('start').textContent = 'Transcrever áudios'; };
+  xhr.send(fd);
+};
+
+function openJob(id) {
+  currentJob = id; lastSig = ''; messages = []; history.replaceState(null, '', '#job=' + id);
+  $('uploadCard').classList.add('hidden');
+  $('progressCard').classList.remove('hidden');
+  $('viewCard').classList.remove('hidden');
+  clearInterval(timer); poll(); timer = setInterval(poll, 2500);
+}
+
+async function poll() {
+  const r = await fetch(`/api/jobs/${currentJob}/messages`);
+  if (!r.ok) { clearInterval(timer); return; }
+  const { summary: s, messages: msgs } = await r.json();
+  const active = ['queued','parsing','transcribing'].includes(s.status);
+  const pct = s.total_audios ? Math.round(100 * s.done_audios / s.total_audios) : (active ? 0 : 100);
+  $('bar').style.width = pct + '%';
+  $('jobTitle').textContent = s.filename;
+  const labels = {queued:'Na fila', parsing:'Lendo o zip…', transcribing:'Transcrevendo…',
+                  done:'Concluído', error:'Erro', cancelled:'Cancelado'};
+  $('progressTxt').textContent = `${labels[s.status]} — ${s.done_audios}/${s.total_audios} áudios`
+    + (s.failed_audios ? ` (${s.failed_audios} com erro)` : '') + ` · ${s.total_messages} mensagens`;
+  $('jobErr').textContent = s.error || '';
+  $('cancelBtn').classList.toggle('hidden', !active);
+  const sig = s.status + s.done_audios + ':' + s.total_messages;
+  if (sig !== lastSig) { lastSig = sig; messages = msgs; fillWho(); render(); }
+  if (!active) { clearInterval(timer); loadHistory(); }
+}
+
+function fillWho() {
+  const sel = $('who'), cur = sel.value;
+  const senders = [...new Set(messages.map(m => m.sender).filter(Boolean))];
+  sel.innerHTML = ''; sel.add(new Option('Todos', ''));
+  senders.forEach(s => sel.add(new Option(s, s))); sel.value = cur;
+}
+
+const esc = s => s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function hl(text, q) {
+  const e = esc(text); if (!q) return e;
+  const re = new RegExp('(' + esc(q).replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')', 'gi');
+  return e.replace(re, '<mark>$1</mark>');
+}
+const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+function filtered() {
+  const q = norm($('q').value.trim()), who = $('who').value;
+  return messages.filter(m => {
+    if ($('onlyAudio').checked && !m.audio_path) return false;
+    if ($('hideSystem').checked && !m.sender && !m.audio_path) return false;
+    if (who && m.sender !== who) return false;
+    if (q && !norm(m.text + ' ' + (m.transcript || '') + ' ' + (m.sender || '')).includes(q)) return false;
+    return true;
+  });
+}
+
+function render() {
+  const q = $('q').value.trim(), list = filtered();
+  const me = $('who').value || null;
+  $('count').textContent = `${list.length} de ${messages.length} mensagens`;
+  const chat = $('chat'), atBottom = chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 40;
+  const prevTop = chat.scrollTop;
+  chat.innerHTML = list.slice(0, 3000).map(m => {
+    if (!m.sender && !m.audio_path) return `<div class="msg system">${hl(m.text, q)}</div>`;
+    let body = '';
+    if (m.audio_path) {
+      body += `<audio controls preload="none" src="/api/jobs/${currentJob}/audio/${m.index}"></audio>`;
+      if (m.tr_status === 'done')
+        body += m.transcript ? `<div class="tr">${hl(m.transcript, q)}</div>`
+                             : `<div class="tr empty">(sem fala detectada)</div>`;
+      else if (m.tr_status === 'error') body += `<div class="tr err">Erro: ${esc(m.tr_error || '')}</div>`;
+      else body += `<div class="tr pending">${m.tr_status === 'running' ? 'transcrevendo…' : 'aguardando…'}</div>`;
+    } else body = hl(m.text, q);
+    const ts = m.raw_date ? `${m.raw_date} ${m.raw_time}` : '';
+    return `<div class="msg ${me && m.sender === me ? 'mine' : ''}">`
+      + (m.sender ? `<div class="who">${esc(m.sender)}</div>` : '') + body
+      + (ts ? `<div class="ts">${esc(ts)}</div>` : '') + `</div>`;
+  }).join('');
+  if (list.length > 3000) chat.insertAdjacentHTML('beforeend',
+    `<div class="msg system">Mostrando 3000 de ${list.length}. Use a busca/filtros ou exporte.</div>`);
+  chat.scrollTop = atBottom && !q ? chat.scrollHeight : prevTop;
+}
+['q','who','onlyAudio','hideSystem'].forEach(id => $(id).addEventListener('input', render));
+
+$('expBtn').onclick = () => {
+  location.href = `/api/jobs/${currentJob}/export?format=${$('expFmt').value}&only_audios=${$('expOnlyAudio').checked}`;
+};
+$('copyBtn').onclick = async () => {
+  const txt = filtered().filter(m => m.audio_path && m.transcript)
+    .map(m => `[${m.raw_date || ''} ${m.raw_time || ''}] ${m.sender || ''}: ${m.transcript}`).join('\n');
+  await navigator.clipboard.writeText(txt);
+  $('copyBtn').textContent = 'Copiado!'; setTimeout(() => $('copyBtn').textContent = 'Copiar transcrições', 1500);
+};
+$('cancelBtn').onclick = () => fetch(`/api/jobs/${currentJob}/cancel`, {method:'POST'});
+$('newBtn').onclick = () => {
+  clearInterval(timer); currentJob = null; history.replaceState(null, '', location.pathname);
+  $('uploadCard').classList.remove('hidden');
+  $('progressCard').classList.add('hidden'); $('viewCard').classList.add('hidden');
+  loadHistory();
+};
+
+async function loadHistory() {
+  const list = await (await fetch('/api/jobs')).json();
+  $('histCard').classList.toggle('hidden', !list.length);
+  $('hist').innerHTML = list.map(j => `<div class="row" style="padding:4px 0">
+      <a data-open="${j.id}" class="grow">${esc(j.filename)}</a>
+      <span class="muted">${j.done_audios}/${j.total_audios} áudios · ${j.status} ·
+        ${new Date(j.created_at*1000).toLocaleString('pt-BR')}</span>
+      <button class="secondary" data-del="${j.id}">Excluir</button></div>`).join('');
+  document.querySelectorAll('[data-open]').forEach(a => a.onclick = () => openJob(a.dataset.open));
+  document.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('Excluir esta conversa e as transcrições?')) return;
+    await fetch(`/api/jobs/${b.dataset.del}`, {method:'DELETE'});
+    if (currentJob === b.dataset.del) $('newBtn').click(); else loadHistory();
+  });
+}
+init();
+</script>
+</body>
+</html>
